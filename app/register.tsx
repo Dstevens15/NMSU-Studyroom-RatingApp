@@ -2,25 +2,29 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+const API_URL = 'http://172.24.253.142:3000';
 
 export default function RegisterScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  function handleRegister() {
+  async function handleRegister() {
     if (!name.trim() || !email.trim() || !password || !confirmPassword) {
       Alert.alert('Missing information', 'Please complete all fields.');
       return;
@@ -44,10 +48,53 @@ export default function RegisterScreen() {
       return;
     }
 
-    Alert.alert(
-      'Registration form complete',
-      'Account creation will be connected to authentication later.'
-    );
+    try {
+      setLoading(true);
+
+      const response = await fetch(`${API_URL}/api/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          full_name: name.trim(),
+          email: email.trim().toLowerCase(),
+          password: password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        Alert.alert(
+          'Registration Failed',
+          data.message || 'Unable to create your account.'
+        );
+        return;
+      }
+
+      Alert.alert(
+        'Account Created!',
+        'Your account was successfully created. You can now sign in.',
+        [
+          {
+            text: 'Continue to Login',
+            onPress: () => router.replace('/login'),
+          },
+        ]
+      );
+
+    } catch (error) {
+      console.error('Registration error:', error);
+
+      Alert.alert(
+        'Connection Error',
+        'Unable to connect to the server. Make sure your backend is running and your phone is connected to the same Wi-Fi.'
+      );
+
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -78,6 +125,7 @@ export default function RegisterScreen() {
               placeholderTextColor="#777777"
               autoCapitalize="words"
               autoComplete="name"
+              editable={!loading}
             />
 
             <Text style={styles.label}>Email</Text>
@@ -90,6 +138,7 @@ export default function RegisterScreen() {
               keyboardType="email-address"
               autoCapitalize="none"
               autoComplete="email"
+              editable={!loading}
             />
 
             <Text style={styles.label}>Password</Text>
@@ -101,6 +150,7 @@ export default function RegisterScreen() {
               placeholderTextColor="#777777"
               secureTextEntry
               autoComplete="new-password"
+              editable={!loading}
             />
 
             <Text style={styles.label}>Confirm Password</Text>
@@ -112,22 +162,34 @@ export default function RegisterScreen() {
               placeholderTextColor="#777777"
               secureTextEntry
               autoComplete="new-password"
+              editable={!loading}
             />
 
             <Pressable
-              style={styles.registerButton}
+              style={[
+                styles.registerButton,
+                loading && styles.disabledButton,
+              ]}
               onPress={handleRegister}
+              disabled={loading}
             >
-              <Text style={styles.registerButtonText}>
-                Create Account
-              </Text>
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.registerButtonText}>
+                  Create Account
+                </Text>
+              )}
             </Pressable>
 
             <View style={styles.signInRow}>
               <Text style={styles.secondaryText}>
                 Already have an account?
               </Text>
-              <Pressable onPress={() => router.replace('/login')}>
+              <Pressable
+                onPress={() => router.replace('/login')}
+                disabled={loading}
+              >
                 <Text style={styles.link}> Sign In</Text>
               </Pressable>
             </View>
@@ -135,6 +197,7 @@ export default function RegisterScreen() {
             <Pressable
               onPress={() => router.replace('/')}
               style={styles.backButton}
+              disabled={loading}
             >
               <Text style={styles.link}>← Back to Home</Text>
             </Pressable>
@@ -214,12 +277,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#8B1E2D',
     borderRadius: 10,
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 14,
     marginTop: 24,
   },
+  disabledButton: {
+    opacity: 0.6,
+  },
   registerButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 25,
     fontWeight: 'bold',
   },
   signInRow: {

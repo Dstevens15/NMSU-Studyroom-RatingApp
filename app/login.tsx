@@ -1,23 +1,85 @@
 
 import { router } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
+import { useState } from 'react';
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+const API_URL = 'http://172.24.253.142:3000';
+
 export default function LoginScreen() {
-  const handleLogin = () => {
-    Alert.alert(
-      'Login',
-      'Authentication will be connected in a future step.'
-    );
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email.trim() || !password) {
+      Alert.alert('Missing Information', 'Please enter your email and password.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const response = await fetch(`${API_URL}/api/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        Alert.alert('Login Failed', data.message || 'Unable to log in.');
+        return;
+      }
+
+      // Securely store authentication token
+      await SecureStore.setItemAsync('authToken', data.token);
+
+      // Store basic student information for the app
+      await SecureStore.setItemAsync(
+        'user',
+        JSON.stringify(data.user)
+      );
+
+      Alert.alert(
+        'Welcome!',
+        `You are now logged in as ${data.user.full_name}.`,
+        [
+          {
+            text: 'Continue',
+            onPress: () => router.replace('/'),
+          },
+        ]
+      );
+
+    } catch (error) {
+      console.error('Login error:', error);
+
+      Alert.alert(
+        'Connection Error',
+        'Unable to connect to the server. Make sure your backend is running and your phone is connected to the same Wi-Fi.'
+      );
+
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -27,20 +89,25 @@ export default function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.loginContent}>
+
           {/* Profile placeholder */}
           <View style={styles.avatar} />
 
           {/* Page title */}
           <Text style={styles.title}>LOGIN</Text>
 
-          {/* Username */}
+          {/* Email */}
           <TextInput
             style={styles.input}
-            placeholder="Username"
+            placeholder="Email"
             placeholderTextColor="#555555"
             autoCapitalize="none"
             autoCorrect={false}
-            accessibilityLabel="Username"
+            keyboardType="email-address"
+            accessibilityLabel="Email"
+            value={email}
+            onChangeText={setEmail}
+            editable={!loading}
           />
 
           {/* Password */}
@@ -51,6 +118,9 @@ export default function LoginScreen() {
             secureTextEntry
             autoCapitalize="none"
             accessibilityLabel="Password"
+            value={password}
+            onChangeText={setPassword}
+            editable={!loading}
           />
 
           {/* Login button */}
@@ -58,33 +128,40 @@ export default function LoginScreen() {
             style={({ pressed }) => [
               styles.loginButton,
               pressed && styles.buttonPressed,
+              loading && styles.disabledButton,
             ]}
             onPress={handleLogin}
+            disabled={loading}
             accessibilityRole="button"
           >
-            <Text style={styles.loginButtonText}>Log In</Text>
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.loginButtonText}>Log In</Text>
+            )}
           </Pressable>
 
-          
-          
-{/* Registration prompt */}
-<View style={styles.registerRow}>
-  <Text style={styles.registerText}>New User? </Text>
-  <Pressable onPress={() => router.push('/register')}>
-    <Text style={styles.registerLink}>Register</Text>
-  </Pressable>
-</View>
-
+          {/* Registration prompt */}
+          <View style={styles.registerRow}>
+            <Text style={styles.registerText}>New User? </Text>
+            <Pressable
+              onPress={() => router.push('/register')}
+              disabled={loading}
+            >
+              <Text style={styles.registerLink}>Register</Text>
+            </Pressable>
+          </View>
 
           {/* Back to Home button */}
           <Pressable
             onPress={() => router.replace('/')}
             style={styles.backButton}
+            disabled={loading}
           >
             <Text style={styles.backButtonText}>← Back to Home</Text>
           </Pressable>
 
-          </View>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -151,6 +228,10 @@ const styles = StyleSheet.create({
     opacity: 0.75,
   },
 
+  disabledButton: {
+    opacity: 0.6,
+  },
+
   loginButtonText: {
     color: '#FFFFFF',
     fontSize: 12,
@@ -166,12 +247,12 @@ const styles = StyleSheet.create({
 
   registerText: {
     color: '#111111',
-    fontSize: 11,
+    fontSize: 18,
   },
 
   registerLink: {
     color: '#1673E6',
-    fontSize: 11,
+    fontSize: 18,
   },
 
   backButton: {
@@ -186,5 +267,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
-
 });

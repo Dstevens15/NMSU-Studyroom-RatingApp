@@ -1,8 +1,11 @@
-
+import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,44 +15,167 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+const API_URL = 'http://172.24.253.142:3000';
+
+const amenities = [
+  'Printing',
+  'Wi-Fi / Internet',
+  'Computer Access',
+  'Coffee',
+  'Power Outlets',
+  'Quiet Environment',
+  'Group Study',
+  'Food Nearby',
+];
+
 export default function CreatePostScreen() {
   const [location, setLocation] = useState('');
   const [story, setStory] = useState('');
   const [roomNumber, setRoomNumber] = useState('');
-  const [ratings, setRatings] = useState([0, 0, 0]);
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
 
-  function updateRating(index: number, value: number) {
-    setRatings((previous) =>
-      previous.map((rating, i) => (i === index ? value : rating))
+  function toggleAmenity(amenity: string) {
+    setSelectedAmenities((current) =>
+      current.includes(amenity)
+        ? current.filter((item) => item !== amenity)
+        : [...current, amenity]
     );
+  }
+
+  async function selectPhoto() {
+    const permission =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert(
+        'Permission Required',
+        'Please allow photo library access to add a picture.'
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets.length > 0) {
+      setPhoto(result.assets[0].uri);
+    }
   }
 
   function clearForm() {
     setLocation('');
     setStory('');
     setRoomNumber('');
-    setRatings([0, 0, 0]);
+    setPhoto(null);
+    setSelectedAmenities([]);
   }
 
-  function submitPost() {
+  async function submitPost() {
     if (!location.trim() || !story.trim()) {
       Alert.alert(
         'Missing information',
-        'Please enter a location and building story.'
+        'Please enter a location and description.'
       );
       return;
     }
 
-    Alert.alert(
-      'Post ready',
-      'Your post is ready. Permanent storage will be added later.'
-    );
+    if (submitting) return;
+
+    try {
+      setSubmitting(true);
+
+      const token = await SecureStore.getItemAsync('authToken');
+
+      if (!token) {
+        Alert.alert(
+          'Sign In Required',
+          'Please sign in before submitting a recommendation.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Sign In',
+              onPress: () => router.push('/login'),
+            },
+          ]
+        );
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/api/recommendations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          location_name: location.trim(),
+          description: story.trim(),
+          room_number: roomNumber.trim() || null,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          Alert.alert(
+            'Session Expired',
+            'Please sign in again before submitting your recommendation.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Sign In',
+                onPress: () => router.push('/login'),
+              },
+            ]
+          );
+          return;
+        }
+
+        throw new Error(
+          data.message || 'Unable to submit your recommendation.'
+        );
+      }
+
+      Alert.alert(
+        'Recommendation Submitted!',
+        'Thank you! Your recommendation has been saved and is awaiting review by the team.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              clearForm();
+              router.replace('/');
+            },
+          },
+        ]
+      );
+
+    } catch (error) {
+      console.error('Recommendation submission error:', error);
+
+      Alert.alert(
+        'Submission Failed',
+        error instanceof Error
+          ? error.message
+          : 'Something went wrong. Please try again.'
+      );
+
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Create Post</Text>
+        <Text style={styles.headerTitle}>Study Location</Text>
 
         <Pressable
           onPress={() => router.push('/login')}
@@ -60,71 +186,166 @@ export default function CreatePostScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.intro}>
+          <Text style={styles.pageTitle}>
+            Recommend a Study Location
+          </Text>
+
+          <Text style={styles.subtitle}>
+            Know a great place to study on campus? Share it with other
+            NMSU students!
+          </Text>
+
+          <Text style={styles.note}>
+            Recommendations will be reviewed by the team before being
+            added to the app.
+          </Text>
+        </View>
+
         <View style={styles.form}>
-          <Text style={styles.label}>Location</Text>
+          <Text style={styles.label}>Location Name *</Text>
           <TextInput
             style={styles.input}
             value={location}
             onChangeText={setLocation}
             placeholder="Enter building or studyroom"
             placeholderTextColor="#777777"
+            maxLength={150}
           />
 
-          <Text style={styles.label}>Story of Building</Text>
+          <Text style={styles.label}>Description *</Text>
           <TextInput
             style={[styles.input, styles.storyInput]}
             value={story}
             onChangeText={setStory}
-            placeholder="Describe this study location"
+            placeholder="Describe this study location and what makes it useful for studying"
             placeholderTextColor="#777777"
             multiline
           />
 
-          <Text style={styles.label}>Room Number</Text>
+          <Text style={styles.label}>Room Number (Optional)</Text>
           <TextInput
             style={styles.input}
             value={roomNumber}
             onChangeText={setRoomNumber}
-            placeholder="Enter room number"
+            placeholder="Enter room number if applicable"
             placeholderTextColor="#777777"
           />
 
-          {['Overall Rating', 'Study Environment', 'Comfort'].map(
-            (category, index) => (
-              <View style={styles.ratingSection} key={category}>
-                <Text style={styles.label}>{category}</Text>
+          {/* Available Amenities */}
+          <Text style={styles.label}>Available Amenities</Text>
 
-                <View style={styles.stars}>
-                  {[1, 2, 3, 4, 5].map((value) => (
-                    <Pressable
-                      key={value}
-                      onPress={() => updateRating(index, value)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${category}: ${value} stars`}
-                    >
-                      <Text
-                        style={[
-                          styles.star,
-                          value <= ratings[index] && styles.selectedStar,
-                        ]}
-                      >
-                        ★
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            )
+          <Text style={styles.amenityDescription}>
+            Select any features available at this study location.
+          </Text>
+
+          <View style={styles.amenitiesContainer}>
+            {amenities.map((amenity) => {
+              const selected = selectedAmenities.includes(amenity);
+
+              return (
+                <Pressable
+                  key={amenity}
+                  onPress={() => toggleAmenity(amenity)}
+                  style={[
+                    styles.amenityOption,
+                    selected && styles.amenityOptionSelected,
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.checkbox,
+                      selected && styles.checkboxSelected,
+                    ]}
+                  >
+                    {selected && (
+                      <Text style={styles.checkmark}>✓</Text>
+                    )}
+                  </View>
+
+                  <Text
+                    style={[
+                      styles.amenityText,
+                      selected && styles.amenityTextSelected,
+                    ]}
+                  >
+                    {amenity}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={styles.selectionCount}>
+            {selectedAmenities.length} amenities selected
+          </Text>
+
+          <Text style={styles.label}>Add a Photo (Optional)</Text>
+
+          {photo ? (
+            <View style={styles.photoContainer}>
+              <Image
+                source={{ uri: photo }}
+                style={styles.photoPreview}
+                resizeMode="cover"
+              />
+
+              <Pressable
+                style={styles.removePhoto}
+                onPress={() => setPhoto(null)}
+              >
+                <Text style={styles.removePhotoText}>
+                  Remove Photo
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              style={styles.photoButton}
+              onPress={selectPhoto}
+            >
+              <Text style={styles.photoButtonText}>
+                + Choose a Photo
+              </Text>
+            </Pressable>
+          )}
+
+          {photo && (
+            <Pressable
+              style={styles.changePhotoButton}
+              onPress={selectPhoto}
+            >
+              <Text style={styles.changePhotoText}>
+                Change Photo
+              </Text>
+            </Pressable>
           )}
         </View>
 
         <View style={styles.actions}>
-          <Pressable style={styles.deleteButton} onPress={clearForm}>
-            <Text style={styles.deleteText}>Clear</Text>
+          <Pressable
+            style={styles.clearButton}
+            onPress={clearForm}
+            disabled={submitting}
+          >
+            <Text style={styles.clearText}>Clear</Text>
           </Pressable>
 
-          <Pressable style={styles.postButton} onPress={submitPost}>
-            <Text style={styles.postText}>Post</Text>
+          <Pressable
+            style={[
+              styles.submitButton,
+              submitting && styles.disabledButton,
+            ]}
+            onPress={submitPost}
+            disabled={submitting}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.submitText}>
+                Submit Recommendation
+              </Text>
+            )}
           </Pressable>
         </View>
 
@@ -179,6 +400,26 @@ const styles = StyleSheet.create({
     maxWidth: 650,
     alignSelf: 'center',
   },
+  intro: {
+    marginBottom: 18,
+  },
+  pageTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#222222',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#555555',
+  },
+  note: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#777777',
+    marginTop: 10,
+  },
   form: {
     backgroundColor: '#FFFFFF',
     padding: 20,
@@ -204,32 +445,116 @@ const styles = StyleSheet.create({
     color: '#222222',
   },
   storyInput: {
-    minHeight: 85,
+    minHeight: 100,
     paddingTop: 12,
     textAlignVertical: 'top',
   },
-  ratingSection: {
-    marginTop: 8,
+  amenityDescription: {
+    color: '#777777',
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 12,
   },
-  stars: {
+  amenitiesContainer: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 4,
+    flexWrap: 'wrap',
+    gap: 9,
   },
-  star: {
-    fontSize: 30,
-    color: '#D0C9C5',
+  amenityOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8F7F4',
+    borderWidth: 1,
+    borderColor: '#D0C9C5',
+    borderRadius: 9,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    width: '48%',
+    minHeight: 48,
   },
-  selectedStar: {
+  amenityOptionSelected: {
+    backgroundColor: '#F7EDEF',
+    borderColor: '#8B1E2D',
+  },
+  checkbox: {
+    width: 19,
+    height: 19,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#A9A29D',
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  checkboxSelected: {
+    backgroundColor: '#8B1E2D',
+    borderColor: '#8B1E2D',
+  },
+  checkmark: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  amenityText: {
+    color: '#444444',
+    fontSize: 12,
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  amenityTextSelected: {
     color: '#8B1E2D',
+    fontWeight: '700',
+  },
+  selectionCount: {
+    color: '#777777',
+    fontSize: 12,
+    marginTop: 10,
+  },
+  photoButton: {
+    backgroundColor: '#F8F7F4',
+    borderWidth: 1,
+    borderColor: '#8B1E2D',
+    borderStyle: 'dashed',
+    borderRadius: 10,
+    padding: 22,
+    alignItems: 'center',
+  },
+  photoButtonText: {
+    color: '#8B1E2D',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  photoContainer: {
+    marginTop: 4,
+  },
+  photoPreview: {
+    width: '100%',
+    height: 190,
+    borderRadius: 10,
+  },
+  removePhoto: {
+    alignSelf: 'center',
+    padding: 10,
+  },
+  removePhotoText: {
+    color: '#8B1E2D',
+    fontWeight: '600',
+  },
+  changePhotoButton: {
+    alignItems: 'center',
+    padding: 8,
+  },
+  changePhotoText: {
+    color: '#8B1E2D',
+    fontWeight: '600',
   },
   actions: {
-    flexDirection: 'row',
-    gap: 14,
+    flexDirection: 'column',
+    gap: 12,
     marginTop: 18,
   },
-  deleteButton: {
-    flex: 1,
+  clearButton: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
@@ -237,21 +562,23 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 10,
   },
-  deleteText: {
+  clearText: {
     color: '#8B1E2D',
     fontSize: 16,
     fontWeight: '600',
   },
-  postButton: {
-    flex: 1,
+  submitButton: {
     alignItems: 'center',
     backgroundColor: '#8B1E2D',
     paddingVertical: 14,
     borderRadius: 10,
   },
-  postText: {
+  disabledButton: {
+    opacity: 0.65,
+  },
+  submitText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
   },
   backButton: {
