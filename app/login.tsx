@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-const API_URL = 'http://172.24.253.142:3000';
+const API_URL = 'https://nmsu-studyroom-ratingapp.onrender.com';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');

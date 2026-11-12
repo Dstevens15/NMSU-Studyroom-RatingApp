@@ -20,7 +20,7 @@ import laVistaImage from '../../assets/images/LaVista.jpeg';
 import nativeAmericanImage from '../../assets/images/NA.png';
 import zuhlImage from '../../assets/images/Zuhl.png';
 
-const API_URL = 'http://172.24.253.142:3000';
+const API_URL = 'https://nmsu-studyroom-ratingapp.onrender.com';
 
 const studyrooms = [
   {

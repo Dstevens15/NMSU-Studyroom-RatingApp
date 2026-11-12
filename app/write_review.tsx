@@ -16,7 +16,7 @@ import {
   View,
 } from 'react-native';
 
-const API_URL = 'http://172.24.253.142:3000';
+const API_URL = 'https://nmsu-studyroom-ratingapp.onrender.com';
 
 const locations: Record<string, string> = {
   zuhl: 'Zuhl Library',
