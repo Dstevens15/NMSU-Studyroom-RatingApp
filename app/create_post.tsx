@@ -1,3 +1,4 @@
+
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
@@ -117,6 +118,7 @@ export default function CreatePostScreen() {
           location_name: location.trim(),
           description: story.trim(),
           room_number: roomNumber.trim() || null,
+          amenities: selectedAmenities,
         }),
       });
 
@@ -144,8 +146,12 @@ export default function CreatePostScreen() {
       }
 
       Alert.alert(
-        'Recommendation Submitted!',
-        'Thank you! Your recommendation has been saved and is awaiting review by the team.',
+        data.moderation_status === 'approved'
+          ? 'Recommendation Published!'
+          : 'Recommendation Submitted!',
+        data.moderation_status === 'approved'
+          ? 'Your recommendation is now available for other students to see!'
+          : 'Thank you! Your recommendation has been submitted and is awaiting administrator review.',
         [
           {
             text: 'OK',
@@ -197,8 +203,9 @@ export default function CreatePostScreen() {
           </Text>
 
           <Text style={styles.note}>
-            Recommendations will be reviewed by the team before being
-            added to the app.
+            Suitable recommendations may be published automatically.
+            Others may be sent to the team for review before appearing
+            in the app.
           </Text>
         </View>
 
@@ -232,7 +239,6 @@ export default function CreatePostScreen() {
             placeholderTextColor="#777777"
           />
 
-          {/* Available Amenities */}
           <Text style={styles.label}>Available Amenities</Text>
 
           <Text style={styles.amenityDescription}>

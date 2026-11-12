@@ -19,6 +19,7 @@ type User = {
   user_id: number;
   full_name: string;
   email: string;
+  role?: string;
 };
 
 type Review = {
@@ -36,6 +37,8 @@ type Recommendation = {
   location_name: string;
   description: string;
   room_number: string | null;
+  amenities?: string[];
+  moderation_reason?: string | null;
   status: string;
   created_at: string;
 };
@@ -50,10 +53,16 @@ const locationNames: Record<string, string> = {
   branson: 'Branson Library',
   corbett: 'Corbett Center',
   'native-american': 'Native American Center',
+  'la-vista': 'La Vista Learning Center',
+  'hardman-jacobs': 'Hardman & Jacobs',
+  garcia: 'Garcia Center',
 };
 
 function formatDate(date: string) {
-  return new Date(date).toLocaleDateString();
+  const parsed = new Date(date);
+  return Number.isNaN(parsed.getTime())
+    ? 'Date unavailable'
+    : parsed.toLocaleDateString();
 }
 
 export default function AccountScreen() {
@@ -82,7 +91,6 @@ export default function AccountScreen() {
       }
 
       const parsedUser = JSON.parse(savedUser) as User;
-      setUser(parsedUser);
 
       const headers = {
         Authorization: `Bearer ${token}`,
@@ -135,6 +143,7 @@ export default function AccountScreen() {
         favoriteResponse.json(),
       ]);
 
+      setUser(parsedUser);
       setReviews(reviewData.reviews || []);
       setRecommendations(recommendationData.recommendations || []);
       setFavorites(favoriteData.favorites || []);
@@ -160,10 +169,7 @@ export default function AccountScreen() {
       'Log Out',
       'Are you sure you want to log out?',
       [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Log Out',
           style: 'destructive',
@@ -245,6 +251,8 @@ export default function AccountScreen() {
     );
   }
 
+  const isAdmin = user.role === 'admin';
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
@@ -256,7 +264,6 @@ export default function AccountScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {/* Student Profile */}
         <View style={styles.profileCard}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>
@@ -271,11 +278,32 @@ export default function AccountScreen() {
           <Text style={styles.email}>{user.email}</Text>
 
           <Text style={styles.memberLabel}>
-            NMSU STUDY FINDER MEMBER
+            {isAdmin
+              ? 'STUDY FINDER ADMINISTRATOR'
+              : 'NMSU STUDY FINDER MEMBER'}
           </Text>
         </View>
 
-        {/* Activity Summary */}
+        {/* Administrator Dashboard */}
+        {isAdmin && (
+          <Pressable
+            style={styles.adminButton}
+            onPress={() => router.push('/admin')}
+          >
+            <View style={styles.adminButtonInfo}>
+              <Text style={styles.adminButtonTitle}>
+                Administrator Dashboard
+              </Text>
+
+              <Text style={styles.adminButtonDescription}>
+                Review and manage student study location recommendations.
+              </Text>
+            </View>
+
+            <Text style={styles.adminArrow}>›</Text>
+          </Pressable>
+        )}
+
         <Text style={styles.sectionTitle}>My Activity</Text>
 
         <View style={styles.statsContainer}>
@@ -296,7 +324,6 @@ export default function AccountScreen() {
           </View>
         </View>
 
-        {/* My Favorites */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>My Favorites</Text>
           <Text style={styles.favoriteCount}>
@@ -337,7 +364,6 @@ export default function AccountScreen() {
           ))
         )}
 
-        {/* My Reviews */}
         <Text style={styles.sectionTitle}>My Reviews</Text>
 
         {reviews.length === 0 ? (
@@ -375,7 +401,6 @@ export default function AccountScreen() {
           ))
         )}
 
-        {/* My Recommendations */}
         <Text style={styles.sectionTitle}>
           My Recommendations
         </Text>
@@ -419,6 +444,18 @@ export default function AccountScreen() {
               {recommendation.room_number ? (
                 <Text style={styles.roomNumber}>
                   Room: {recommendation.room_number}
+                </Text>
+              ) : null}
+
+              {recommendation.amenities?.length ? (
+                <Text style={styles.roomNumber}>
+                  Amenities: {recommendation.amenities.join(', ')}
+                </Text>
+              ) : null}
+
+              {recommendation.moderation_reason ? (
+                <Text style={styles.moderationReason}>
+                  Review note: {recommendation.moderation_reason}
                 </Text>
               ) : null}
 
@@ -491,7 +528,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     padding: 25,
-    marginBottom: 26,
+    marginBottom: 20,
   },
   avatar: {
     width: 72,
@@ -523,6 +560,33 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     color: '#8B1E2D',
     marginTop: 15,
+  },
+  adminButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#8B1E2D',
+    borderRadius: 12,
+    padding: 18,
+    marginBottom: 25,
+  },
+  adminButtonInfo: {
+    flex: 1,
+  },
+  adminButtonTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: 'bold',
+  },
+  adminButtonDescription: {
+    color: '#F4E7E9',
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 5,
+  },
+  adminArrow: {
+    color: '#FFFFFF',
+    fontSize: 30,
+    marginLeft: 12,
   },
   sectionTitle: {
     fontSize: 21,
@@ -639,6 +703,11 @@ const styles = StyleSheet.create({
   roomNumber: {
     fontSize: 13,
     color: '#666666',
+    marginTop: 7,
+  },
+  moderationReason: {
+    fontSize: 13,
+    color: '#8B1E2D',
     marginTop: 7,
   },
   statusBadge: {

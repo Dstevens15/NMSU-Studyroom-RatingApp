@@ -1,4 +1,3 @@
-
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useCallback, useState } from 'react';
@@ -45,6 +44,7 @@ type Studyroom = {
   rooms: string;
   image: any;
   printing?: boolean;
+  amenities?: string[];
 };
 
 const studyrooms: Record<string, Studyroom> = {
@@ -98,11 +98,23 @@ export default function StudyroomDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const locationId = Array.isArray(id) ? id[0] : id;
 
+  const [communityLocation, setCommunityLocation] = useState<{
+    name: string;
+    description: string;
+    rooms: string;
+    amenities: string[];
+  } | null>(null);
+
+  const [communityLoading, setCommunityLoading] = useState(false);
+
+  const isCommunityLocation = String(locationId || '').startsWith('community-');
+
   const room = studyrooms[String(locationId).toLowerCase()] ?? {
-    name: 'Studyroom',
-    description: 'Study location at NMSU.',
-    rooms: 'Studyroom information will be added later.',
+    name: communityLocation?.name ?? 'Studyroom',
+    description: communityLocation?.description ?? 'Study location at NMSU.',
+    rooms: communityLocation?.rooms ?? 'Studyroom information will be added later.',
     image: zuhlImage,
+    amenities: communityLocation?.amenities ?? [],
   };
 
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -167,13 +179,63 @@ export default function StudyroomDetailsScreen() {
         try {
           const token = await getToken();
           const savedUser = await SecureStore.getItemAsync('user');
-        
 
           if (active && savedUser) {
             const user = JSON.parse(savedUser);
             setCurrentUserId(Number(user.user_id));
           } else if (active) {
             setCurrentUserId(null);
+          }
+
+          if (active && isCommunityLocation) {
+            setCommunityLoading(true);
+
+            try {
+              const recommendationId = String(locationId).replace(
+                'community-',
+                ''
+              );
+
+              const communityResponse = await fetch(
+                `${API_URL}/api/recommendations/community/${encodeURIComponent(recommendationId)}`
+              );
+
+              const communityData = await communityResponse.json();
+
+              if (!communityResponse.ok) {
+                throw new Error(
+                  communityData.message ||
+                    'Unable to load this community location.'
+                );
+              }
+
+              const recommendation = communityData.recommendation;
+
+              if (active && recommendation) {
+                setCommunityLocation({
+                  name: recommendation.location_name,
+                  description: recommendation.description,
+                  rooms: recommendation.room_number
+                    ? `Room: ${recommendation.room_number}`
+                    : 'Community-recommended study location.',
+                  amenities: Array.isArray(recommendation.amenities)
+                    ? recommendation.amenities
+                    : [],
+                });
+              }
+            } catch (communityError) {
+              console.error(
+                'Community location loading error:',
+                communityError
+              );
+              if (active) {
+                setError('Unable to load this community location.');
+              }
+            } finally {
+              if (active) setCommunityLoading(false);
+            }
+          } else if (active) {
+            setCommunityLocation(null);
           }
 
           if (active) {
@@ -211,7 +273,7 @@ export default function StudyroomDetailsScreen() {
       return () => {
         active = false;
       };
-    }, [locationId, fetchReviews])
+    }, [locationId, fetchReviews, isCommunityLocation])
   );
 
   async function toggleFavorite() {
@@ -474,7 +536,7 @@ export default function StudyroomDetailsScreen() {
     );
   }
 
-  return (
+    return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
         <Text style={styles.appTitle}>NMSU Studyroom Ratings</Text>
@@ -489,11 +551,20 @@ export default function StudyroomDetailsScreen() {
         </Pressable>
 
         <View style={styles.card}>
-          <Image
-            source={room.image}
-            style={styles.locationImage}
-            resizeMode="cover"
-          />
+          {isCommunityLocation ? (
+            <View style={styles.communityImagePlaceholder}>
+              <Text style={styles.communityImageIcon}>📍</Text>
+              <Text style={styles.communityImageLabel}>
+                Community Study Location
+              </Text>
+            </View>
+          ) : (
+            <Image
+              source={room.image}
+              style={styles.locationImage}
+              resizeMode="cover"
+            />
+          )}
 
           <View style={styles.titleRow}>
             <Text style={styles.locationName}>{room.name}</Text>
@@ -530,8 +601,34 @@ export default function StudyroomDetailsScreen() {
           <Text style={styles.sectionTitle}>About this location</Text>
           <Text style={styles.description}>{room.description}</Text>
 
-          <Text style={styles.sectionTitle}>Study areas</Text>
+          <Text style={styles.sectionTitle}>
+            {isCommunityLocation ? 'Location Details' : 'Study areas'}
+          </Text>
           <Text style={styles.description}>{room.rooms}</Text>
+
+          {isCommunityLocation && (
+            <>
+              <Text style={styles.sectionTitle}>Reported Amenities</Text>
+
+              {communityLoading ? (
+                <ActivityIndicator color="#8B1E2D" />
+              ) : communityLocation?.amenities.length ? (
+                <View style={styles.communityAmenities}>
+                  {communityLocation.amenities.map((amenity) => (
+                    <View key={amenity} style={styles.communityAmenityTag}>
+                      <Text style={styles.communityAmenityText}>
+                        {amenity}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.description}>
+                  No amenities were provided.
+                </Text>
+              )}
+            </>
+          )}
         </View>
 
         <View style={styles.card}>
@@ -542,7 +639,9 @@ export default function StudyroomDetailsScreen() {
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#8B1E2D" />
-              <Text style={styles.description}>Loading student reviews...</Text>
+              <Text style={styles.description}>
+                Loading student reviews...
+              </Text>
             </View>
           ) : error ? (
             <Text style={styles.errorText}>{error}</Text>
@@ -711,6 +810,7 @@ export default function StudyroomDetailsScreen() {
   );
 }
 
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -758,6 +858,41 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 10,
     marginBottom: 18,
+  },
+  communityImagePlaceholder: {
+    width: '100%',
+    height: 150,
+    borderRadius: 10,
+    marginBottom: 18,
+    backgroundColor: '#F1EEE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  communityImageIcon: {
+    fontSize: 34,
+    marginBottom: 8,
+  },
+  communityImageLabel: {
+    color: '#8B1E2D',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  communityAmenities: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  communityAmenityTag: {
+    backgroundColor: '#F1EEE7',
+    borderRadius: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  communityAmenityText: {
+    color: '#555044',
+    fontSize: 13,
+    fontWeight: '600',
   },
   titleRow: {
     flexDirection: 'row',

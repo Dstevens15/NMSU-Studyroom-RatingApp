@@ -21,6 +21,47 @@ const validLocations = [
     'garcia'
 ];
 
+const allowedAmenities = [
+    'Printing',
+    'Wi-Fi / Internet',
+    'Computer Access',
+    'Coffee',
+    'Power Outlets',
+    'Quiet Environment',
+    'Group Study',
+    'Food Nearby'
+];
+
+function isCommunityLocation(id) {
+    return /^community-\d+$/.test(id);
+}
+
+async function validStudyroom(id) {
+    if (validLocations.includes(id)) return true;
+    if (!isCommunityLocation(id)) return false;
+
+    const recommendationId = Number(id.replace('community-', ''));
+    const [rows] = await pool.execute(
+        `SELECT recommendation_id
+         FROM recommendations
+         WHERE recommendation_id = ? AND status = 'approved'`,
+        [recommendationId]
+    );
+    return rows.length > 0;
+}
+
+function parseAmenities(value) {
+    if (Array.isArray(value)) return value;
+    if (!value) return [];
+    try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+
 // ==========================================
 // TEST SERVER ROUTE
 // ==========================================
@@ -126,7 +167,7 @@ app.post('/api/login', async (req, res) => {
         const normalizedEmail = email.trim().toLowerCase();
 
         const sql = `
-            SELECT user_id, full_name, email, password_hash
+            SELECT user_id, full_name, email, password_hash, role
             FROM users
             WHERE email = ?
         `;
@@ -174,7 +215,8 @@ app.post('/api/login', async (req, res) => {
             user: {
                 user_id: user.user_id,
                 full_name: user.full_name,
-                email: user.email
+                email: user.email,
+                role: user.role || 'student'
             }
         });
 
@@ -247,6 +289,155 @@ function optionalAuthenticateToken(req, res, next) {
 
 
 // ==========================================
+// ADMIN AUTHORIZATION
+// ==========================================
+
+async function requireAdmin(req, res, next) {
+    try {
+        const [users] = await pool.execute(
+            'SELECT role FROM users WHERE user_id = ?',
+            [req.user.user_id]
+        );
+
+        if (users.length === 0 || users[0].role !== 'admin') {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Administrator access required.'
+            });
+        }
+        next();
+    } catch (error) {
+        console.error('Admin authorization error:', error.message);
+        res.status(500).json({
+            status: 'error',
+            message: 'Unable to verify administrator permissions.'
+        });
+    }
+}
+
+// ==========================================
+// COMMUNITY RECOMMENDATIONS
+// ==========================================
+
+app.get('/api/recommendations/approved', async (req, res) => {
+    try {
+        const [recommendations] = await pool.execute(
+            `SELECT recommendation_id, location_name, description,
+                    room_number, amenities, created_at
+             FROM recommendations
+             WHERE status = 'approved'
+             ORDER BY created_at DESC`
+        );
+
+        res.json({
+            status: 'success',
+            recommendations: recommendations.map(item => ({
+                ...item,
+                amenities: parseAmenities(item.amenities),
+                studyroom_id: `community-${item.recommendation_id}`
+            }))
+        });
+    } catch (error) {
+        console.error('Approved recommendations error:', error.message);
+        res.status(500).json({
+            status: 'error',
+            message: 'Unable to retrieve community locations.'
+        });
+    }
+});
+
+app.get('/api/recommendations/community/:id', async (req, res) => {
+    try {
+        const recommendationId = Number(req.params.id);
+        if (!Number.isInteger(recommendationId) || recommendationId <= 0) {
+            return res.status(400).json({ status: 'error', message: 'Invalid recommendation ID.' });
+        }
+
+        const [rows] = await pool.execute(
+            `SELECT recommendation_id, location_name, description,
+                    room_number, amenities, created_at
+             FROM recommendations
+             WHERE recommendation_id = ? AND status = 'approved'`,
+            [recommendationId]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ status: 'error', message: 'Community location not found.' });
+        }
+
+        res.json({
+            status: 'success',
+            recommendation: {
+                ...rows[0],
+                amenities: parseAmenities(rows[0].amenities),
+                studyroom_id: `community-${rows[0].recommendation_id}`
+            }
+        });
+    } catch (error) {
+        console.error('Community location error:', error.message);
+        res.status(500).json({ status: 'error', message: 'Unable to retrieve this location.' });
+    }
+});
+
+app.get('/api/admin/recommendations', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const [recommendations] = await pool.execute(
+            `SELECT r.recommendation_id, r.location_name, r.description,
+                    r.room_number, r.amenities, r.moderation_reason,
+                    r.created_at, u.full_name, u.email
+             FROM recommendations r
+             JOIN users u ON r.user_id = u.user_id
+             WHERE r.status = 'pending'
+             ORDER BY r.created_at ASC`
+        );
+
+        res.json({
+            status: 'success',
+            recommendations: recommendations.map(item => ({
+                ...item,
+                amenities: parseAmenities(item.amenities)
+            }))
+        });
+
+
+            } catch (error) {
+        console.error('Admin queue error:', error.message);
+        res.status(500).json({ status: 'error', message: 'Unable to retrieve pending recommendations.' });
+    }
+});
+
+app.put('/api/admin/recommendations/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const recommendationId = Number(req.params.id);
+        const { decision } = req.body;
+
+        if (!Number.isInteger(recommendationId) || recommendationId <= 0) {
+            return res.status(400).json({ status: 'error', message: 'Invalid recommendation ID.' });
+        }
+        if (!['approved', 'rejected'].includes(decision)) {
+            return res.status(400).json({ status: 'error', message: 'Decision must be approved or rejected.' });
+        }
+
+        const [result] = await pool.execute(
+            `UPDATE recommendations
+             SET status = ?, reviewed_at = CURRENT_TIMESTAMP,
+                 reviewed_by = ?, moderation_reason = NULL
+             WHERE recommendation_id = ? AND status = 'pending'`,
+            [decision, req.user.user_id, recommendationId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ status: 'error', message: 'Pending recommendation not found.' });
+        }
+        res.json({ status: 'success', message: `Recommendation ${decision} successfully.` });
+    } catch (error) {
+        console.error('Moderation error:', error.message);
+        res.status(500).json({ status: 'error', message: 'Unable to update recommendation.' });
+    }
+});
+
+
+// ==========================================
 // FAVORITES
 // ==========================================
 
@@ -287,7 +478,7 @@ app.post('/api/favorites/:studyroom_id', authenticateToken, async (req, res) => 
     try {
         const { studyroom_id } = req.params;
 
-        if (!validLocations.includes(studyroom_id)) {
+        if (!await validStudyroom(studyroom_id)) {
             return res.status(400).json({
                 status: 'error',
                 message: 'Invalid studyroom location.'
@@ -326,7 +517,7 @@ app.delete('/api/favorites/:studyroom_id', authenticateToken, async (req, res) =
     try {
         const { studyroom_id } = req.params;
 
-        if (!validLocations.includes(studyroom_id)) {
+        if (!await validStudyroom(studyroom_id)) {
             return res.status(400).json({
                 status: 'error',
                 message: 'Invalid studyroom location.'
@@ -411,7 +602,9 @@ app.get('/api/my/recommendations', authenticateToken, async (req, res) => {
                 location_name,
                 description,
                 room_number,
+                amenities,
                 status,
+                moderation_reason,
                 created_at
             FROM recommendations
             WHERE user_id = ?
@@ -424,7 +617,10 @@ app.get('/api/my/recommendations', authenticateToken, async (req, res) => {
 
         res.json({
             status: 'success',
-            recommendations
+            recommendations: recommendations.map(item => ({
+                ...item,
+                amenities: parseAmenities(item.amenities)
+            }))
         });
 
     } catch (error) {
@@ -444,74 +640,72 @@ app.get('/api/my/recommendations', authenticateToken, async (req, res) => {
 
 app.post('/api/recommendations', authenticateToken, async (req, res) => {
     try {
-        const {
-            location_name,
-            description,
-            room_number
-        } = req.body;
+        const { location_name, description, room_number, amenities = [] } = req.body;
 
-        if (
-            typeof location_name !== 'string' ||
-            !location_name.trim() ||
-            location_name.trim().length > 150
-        ) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Please provide a location name (maximum 150 characters).'
-            });
+        if (typeof location_name !== 'string' || !location_name.trim() || location_name.trim().length > 150) {
+            return res.status(400).json({ status: 'error', message: 'Please provide a location name (maximum 150 characters).' });
+        }
+        if (typeof description !== 'string' || !description.trim() || description.trim().length > 3000) {
+            return res.status(400).json({ status: 'error', message: 'Please provide a description of up to 3,000 characters.' });
+        }
+        if (room_number !== undefined && room_number !== null && typeof room_number !== 'string') {
+            return res.status(400).json({ status: 'error', message: 'Invalid room number.' });
+        }
+        if (!Array.isArray(amenities) || amenities.some(item => typeof item !== 'string' || !allowedAmenities.includes(item))) {
+            return res.status(400).json({ status: 'error', message: 'Please select valid study location amenities.' });
         }
 
-        if (
-            typeof description !== 'string' ||
-            !description.trim()
-        ) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Please provide a description.'
-            });
+        const name = location_name.trim();
+        const details = description.trim();
+        const selectedAmenities = [...new Set(amenities)];
+        let moderationReason = null;
+
+        const [duplicates] = await pool.execute(
+            `SELECT recommendation_id
+             FROM recommendations
+             WHERE LOWER(TRIM(location_name)) = LOWER(TRIM(?))
+               AND status IN ('approved', 'pending')
+             LIMIT 1`,
+            [name]
+        );
+        if (duplicates.length > 0) moderationReason = 'Possible duplicate location.';
+        if (/https?:\/\/|www\./i.test(name + ' ' + details)) {
+            moderationReason = 'Contains a link and requires review.';
         }
 
-        if (
-            room_number !== undefined &&
-            room_number !== null &&
-            typeof room_number !== 'string'
-        ) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Invalid room number.'
-            });
+        const flaggedTerms = ['kill yourself', 'racial slur', 'pornography'];
+        if (flaggedTerms.some(term => (name + ' ' + details).toLowerCase().includes(term))) {
+            moderationReason = 'Content requires administrator review.';
         }
 
-        const sql = `
-            INSERT INTO recommendations (
-                user_id,
-                location_name,
-                description,
-                room_number
-            )
-            VALUES (?, ?, ?, ?)
-        `;
-
-        const [result] = await pool.execute(sql, [
-            req.user.user_id,
-            location_name.trim(),
-            description.trim(),
-            room_number ? room_number.trim() : null
-        ]);
+        const moderationStatus = moderationReason ? 'pending' : 'approved';
+        const [result] = await pool.execute(
+            `INSERT INTO recommendations (
+                user_id, location_name, description, room_number,
+                amenities, status, moderation_reason
+             ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+                req.user.user_id,
+                name,
+                details,
+                room_number ? room_number.trim() : null,
+                JSON.stringify(selectedAmenities),
+                moderationStatus,
+                moderationReason
+            ]
+        );
 
         res.status(201).json({
             status: 'success',
-            message: 'Recommendation submitted successfully!',
-            recommendation_id: result.insertId
+            message: moderationStatus === 'approved'
+                ? 'Your recommendation has been published!'
+                : 'Your recommendation was submitted for administrator review.',
+            recommendation_id: result.insertId,
+            moderation_status: moderationStatus
         });
-
     } catch (error) {
         console.error('Recommendation submission error:', error.message);
-
-        res.status(500).json({
-            status: 'error',
-            message: 'Unable to submit your recommendation.'
-        });
+        res.status(500).json({ status: 'error', message: 'Unable to submit your recommendation.' });
     }
 });
 
@@ -532,7 +726,7 @@ app.post('/api/reviews', authenticateToken, async (req, res) => {
 
         if (
             typeof studyroom_id !== 'string' ||
-            !validLocations.includes(studyroom_id)
+            !await validStudyroom(studyroom_id)
         ) {
             return res.status(400).json({
                 status: 'error',
@@ -607,7 +801,6 @@ app.post('/api/reviews', authenticateToken, async (req, res) => {
         });
     }
 });
-
 
 // ==========================================
 // EDIT A STUDENT REVIEW
@@ -862,7 +1055,7 @@ app.get('/api/reviews/:studyroom_id', optionalAuthenticateToken, async (req, res
     try {
         const { studyroom_id } = req.params;
 
-        if (!validLocations.includes(studyroom_id)) {
+        if (!await validStudyroom(studyroom_id)) {
             return res.status(400).json({
                 status: 'error',
                 message: 'Invalid studyroom location.'

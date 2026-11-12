@@ -28,50 +28,62 @@ const studyrooms = [
     name: 'Zuhl Library',
     description: 'A place to study, read, and work on assignments.',
     image: zuhlImage,
-    printing: false,
+    amenities: [] as string[],
   },
   {
     id: 'branson',
     name: 'Branson Library',
     description: 'A study space for individual and group work.',
     image: bransonImage,
-    printing: true,
+    amenities: ['Printing'],
   },
   {
     id: 'corbett',
     name: 'Corbett Center',
     description: 'A convenient campus location to meet, relax, and study.',
     image: corbettImage,
-    printing: false,
+    amenities: [],
   },
   {
     id: 'native-american',
     name: 'Native American Center',
     description: 'A welcoming campus space for studying and student gatherings.',
     image: nativeAmericanImage,
-    printing: true,
+    amenities: ['Printing'],
   },
   {
     id: 'la-vista',
     name: 'La Vista Learning Center',
     description: 'A learning center offering spaces for individual and group study.',
     image: laVistaImage,
-    printing: false,
+    amenities: [],
   },
   {
     id: 'hardman-jacobs',
     name: 'Hardman & Jacobs Undergraduate Learning Center',
     description: 'A campus learning center with computer labs and study areas.',
     image: hardmanImage,
-    printing: false,
+    amenities: [],
   },
   {
     id: 'garcia',
     name: 'Garcia Center',
     description: 'A student center offering lounge and study spaces.',
     image: garciaImage,
-    printing: false,
+    amenities: [],
   },
+];
+
+const amenityFilters = [
+  'All Locations',
+  'Printing',
+  'Wi-Fi / Internet',
+  'Computer Access',
+  'Coffee',
+  'Power Outlets',
+  'Quiet Environment',
+  'Group Study',
+  'Food Nearby',
 ];
 
 type Review = {
@@ -84,16 +96,65 @@ type RatingSummary = {
 };
 
 type RatingMap = Record<string, RatingSummary>;
-type FilterType = 'all' | 'printing';
+
+type CommunityLocation = {
+  recommendation_id: number;
+  studyroom_id: string;
+  location_name: string;
+  description: string;
+  room_number?: string | null;
+  amenities: string[];
+};
 
 export default function HomeScreen() {
   const [ratings, setRatings] = useState<RatingMap>({});
   const [ratingsLoading, setRatingsLoading] = useState(true);
   const [ratingsError, setRatingsError] = useState(false);
 
+  const [communityLocations, setCommunityLocations] = useState<
+    CommunityLocation[]
+  >([]);
+  const [communityLoading, setCommunityLoading] = useState(true);
+  const [communityError, setCommunityError] = useState(false);
+
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFilter, setSelectedFilter] =
-    useState<FilterType>('all');
+  const [selectedFilter, setSelectedFilter] = useState('All Locations');
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadHomepage() {
+      try {
+        setCommunityLoading(true);
+        setCommunityError(false);
+
+        const response = await fetch(
+          `${API_URL}/api/recommendations/approved`
+        );
+
+        if (!response.ok) {
+          throw new Error('Unable to retrieve community recommendations.');
+        }
+
+        const data = await response.json();
+
+        if (active) {
+          setCommunityLocations(data.recommendations || []);
+        }
+      } catch (error) {
+        console.error('Community recommendations error:', error);
+        if (active) setCommunityError(true);
+      } finally {
+        if (active) setCommunityLoading(false);
+      }
+    }
+
+    loadHomepage();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -103,37 +164,44 @@ export default function HomeScreen() {
         setRatingsLoading(true);
         setRatingsError(false);
 
-        const responses = await Promise.all(
-          studyrooms.map((location) =>
-            fetch(`${API_URL}/api/reviews/${location.id}`)
-          )
-        );
+        const allLocations = [
+          ...studyrooms.map((location) => location.id),
+          ...communityLocations.map((location) => location.studyroom_id),
+        ];
 
-        const responseData = await Promise.all(
-          responses.map(async (response) => {
+        const results = await Promise.all(
+          allLocations.map(async (id) => {
+            const response = await fetch(`${API_URL}/api/reviews/${id}`);
+
             if (!response.ok) {
-              throw new Error('Unable to retrieve studyroom ratings.');
+              throw new Error(`Unable to load ratings for ${id}`);
             }
-            return response.json();
+
+            const data = await response.json();
+            const reviews: Review[] = data.reviews || [];
+
+            const total = reviews.reduce(
+              (sum, review) => sum + Number(review.overall_rating),
+              0
+            );
+
+            return {
+              id,
+              average:
+                reviews.length > 0
+                  ? Math.round((total / reviews.length) * 10) / 10
+                  : 0,
+              count: reviews.length,
+            };
           })
         );
 
         const summaries: RatingMap = {};
 
-        studyrooms.forEach((location, index) => {
-          const reviews: Review[] = responseData[index].reviews || [];
-
-          const total = reviews.reduce(
-            (sum, review) => sum + Number(review.overall_rating),
-            0
-          );
-
-          summaries[location.id] = {
-            average:
-              reviews.length > 0
-                ? Math.round((total / reviews.length) * 10) / 10
-                : 0,
-            count: reviews.length,
+        results.forEach((result) => {
+          summaries[result.id] = {
+            average: result.average,
+            count: result.count,
           };
         });
 
@@ -151,7 +219,7 @@ export default function HomeScreen() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [communityLocations]);
 
   function renderRating(locationId: string) {
     if (ratingsLoading) return 'Loading ratings...';
@@ -166,15 +234,28 @@ export default function HomeScreen() {
     }`;
   }
 
-  const filteredLocations = studyrooms.filter((location) => {
-    const search = searchQuery.trim().toLowerCase();
+  const search = searchQuery.trim().toLowerCase();
 
+  const filteredLocations = studyrooms.filter((location) => {
     const matchesSearch =
       location.name.toLowerCase().includes(search) ||
       location.description.toLowerCase().includes(search);
 
     const matchesFilter =
-      selectedFilter === 'all' || location.printing;
+      selectedFilter === 'All Locations' ||
+      location.amenities.includes(selectedFilter);
+
+    return matchesSearch && matchesFilter;
+  });
+
+  const filteredCommunity = communityLocations.filter((location) => {
+    const matchesSearch =
+      location.location_name.toLowerCase().includes(search) ||
+      location.description.toLowerCase().includes(search);
+
+    const matchesFilter =
+      selectedFilter === 'All Locations' ||
+      location.amenities.includes(selectedFilter);
 
     return matchesSearch && matchesFilter;
   });
@@ -224,43 +305,30 @@ export default function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterRow}
         >
-          <Pressable
-            onPress={() => setSelectedFilter('all')}
-            style={[
-              styles.filterChip,
-              selectedFilter === 'all' && styles.filterChipActive,
-            ]}
-          >
-            <Text
+          {amenityFilters.map((filter) => (
+            <Pressable
+              key={filter}
+              onPress={() => setSelectedFilter(filter)}
               style={[
-                styles.filterChipText,
-                selectedFilter === 'all' && styles.filterChipTextActive,
+                styles.filterChip,
+                selectedFilter === filter && styles.filterChipActive,
               ]}
             >
-              All Locations
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setSelectedFilter('printing')}
-            style={[
-              styles.filterChip,
-              selectedFilter === 'printing' && styles.filterChipActive,
-            ]}
-          >
-            <Text
-              style={[
-                styles.filterChipText,
-                selectedFilter === 'printing' && styles.filterChipTextActive,
-              ]}
-            >
-              🖨 Free Printing
-            </Text>
-          </Pressable>
+              <Text
+                style={[
+                  styles.filterChipText,
+                  selectedFilter === filter && styles.filterChipTextActive,
+                ]}
+              >
+                {filter === 'Printing' ? '🖨 Printing' : filter}
+              </Text>
+            </Pressable>
+          ))}
         </ScrollView>
 
         <Text style={styles.resultsCount}>
-          Showing {filteredLocations.length} of {studyrooms.length} study locations
+          Showing {filteredLocations.length + filteredCommunity.length} of{' '}
+          {studyrooms.length + communityLocations.length} study locations
         </Text>
 
         <Pressable
@@ -281,6 +349,8 @@ export default function HomeScreen() {
           </Text>
         </Pressable>
 
+        <Text style={styles.sectionTitle}>NMSU Study Locations</Text>
+
         {filteredLocations.length > 0 ? (
           filteredLocations.map((location) => (
             <Pressable
@@ -295,19 +365,15 @@ export default function HomeScreen() {
               />
 
               <View style={styles.cardInfo}>
-                <Text style={styles.locationName}>
-                  {location.name}
-                </Text>
+                <Text style={styles.locationName}>{location.name}</Text>
 
                 <Text style={styles.description}>
                   {location.description}
                 </Text>
 
-                {location.printing && (
+                {location.amenities.includes('Printing') && (
                   <View style={styles.featureTag}>
-                    <Text style={styles.featureText}>
-                      🖨 Free Printing
-                    </Text>
+                    <Text style={styles.featureText}>🖨 Printing</Text>
                   </View>
                 )}
 
@@ -320,26 +386,129 @@ export default function HomeScreen() {
         ) : (
           <View style={styles.emptyResults}>
             <Text style={styles.emptyResultsTitle}>
-              No study locations found
+              No NMSU locations found
+            </Text>
+            <Text style={styles.emptyResultsText}>
+              Try another search or select a different amenity.
+            </Text>
+          </View>
+        )}
+
+        <View style={styles.communityHeader}>
+          <Text style={styles.sectionTitle}>
+            Community Recommendations
+          </Text>
+
+          <Text style={styles.communitySubtitle}>
+            Study spots recommended by fellow NMSU students.
+          </Text>
+        </View>
+
+        {communityLoading ? (
+          <Text style={styles.statusText}>
+            Loading community recommendations...
+          </Text>
+        ) : communityError ? (
+          <View style={styles.emptyResults}>
+            <Text style={styles.emptyResultsTitle}>
+              Recommendations unavailable
+            </Text>
+            <Text style={styles.emptyResultsText}>
+              We couldn't load community locations right now. Please try
+              again later.
+            </Text>
+          </View>
+        ) : filteredCommunity.length > 0 ? (
+          filteredCommunity.map((location) => (
+            <Pressable
+              key={location.recommendation_id}
+              style={styles.communityCard}
+              onPress={() =>
+                router.push(`/studyroom/${location.studyroom_id}`)
+              }
+            >
+              <View style={styles.communityCardTop}>
+                <View style={styles.communityIcon}>
+                  <Text style={styles.communityIconText}>📍</Text>
+                </View>
+
+                <View style={styles.communityTitleContainer}>
+                  <Text style={styles.locationName}>
+                    {location.location_name}
+                  </Text>
+                  <Text style={styles.communityLabel}>
+                    Student recommended
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.description}>
+                {location.description}
+              </Text>
+
+              {location.room_number ? (
+                <Text style={styles.roomNumber}>
+                  Room: {location.room_number}
+                </Text>
+              ) : null}
+
+              {location.amenities.length > 0 && (
+                <View style={styles.amenityTags}>
+                  {location.amenities.map((amenity) => (
+                    <View key={amenity} style={styles.amenityTag}>
+                      <Text style={styles.amenityTagText}>
+                        {amenity}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <Text style={styles.rating}>
+                {renderRating(location.studyroom_id)}
+              </Text>
+
+              <Text style={styles.viewDetails}>
+                View location and reviews →
+              </Text>
+            </Pressable>
+          ))
+        ) : (
+          <View style={styles.emptyResults}>
+            <Text style={styles.emptyResultsTitle}>
+              {communityLocations.length === 0
+                ? 'No community recommendations yet'
+                : 'No matching recommendations'}
             </Text>
 
             <Text style={styles.emptyResultsText}>
-              Try another search or change your filter.
+              {communityLocations.length === 0
+                ? 'Be the first to recommend a new place to study!'
+                : 'Try another search or choose a different amenity filter.'}
             </Text>
 
             <Pressable
-              onPress={() => {
-                setSearchQuery('');
-                setSelectedFilter('all');
-              }}
+              onPress={() => router.push('/create_post')}
               style={styles.resetButton}
             >
               <Text style={styles.resetButtonText}>
-                Clear Search and Filters
+                Recommend a Location
               </Text>
             </Pressable>
           </View>
         )}
+
+        <Pressable
+          onPress={() => {
+            setSearchQuery('');
+            setSelectedFilter('All Locations');
+          }}
+          style={styles.clearFiltersButton}
+        >
+          <Text style={styles.clearFiltersText}>
+            Clear Search and Filters
+          </Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -387,7 +556,7 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   sectionTitle: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#222222',
     marginBottom: 8,
@@ -441,7 +610,7 @@ const styles = StyleSheet.create({
     borderColor: '#8B1E2D',
   },
   filterChipText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#555555',
   },
@@ -472,7 +641,7 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 10,
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 28,
   },
   mapButtonText: {
     color: '#8B1E2D',
@@ -496,13 +665,13 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   locationName: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: 'bold',
     color: '#222222',
     marginBottom: 6,
   },
   description: {
-    fontSize: 15,
+    fontSize: 14,
     lineHeight: 22,
     color: '#666666',
   },
@@ -520,9 +689,85 @@ const styles = StyleSheet.create({
     color: '#555044',
   },
   rating: {
-    fontSize: 15,
+    fontSize: 14,
     marginTop: 10,
     color: '#333333',
+  },
+  communityHeader: {
+    marginTop: 22,
+    marginBottom: 14,
+  },
+  communitySubtitle: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#666666',
+  },
+  communityCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DCD5CA',
+    borderRadius: 12,
+    padding: 18,
+    marginBottom: 16,
+  },
+  communityCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  communityIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: '#F1EEE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  communityIconText: {
+    fontSize: 20,
+  },
+  communityTitleContainer: {
+    flex: 1,
+  },
+  communityLabel: {
+    fontSize: 12,
+    color: '#8B1E2D',
+    fontWeight: '600',
+  },
+  roomNumber: {
+    fontSize: 13,
+    color: '#555555',
+    marginTop: 8,
+  },
+  amenityTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginTop: 12,
+  },
+  amenityTag: {
+    backgroundColor: '#F1EEE7',
+    borderRadius: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  amenityTagText: {
+    fontSize: 12,
+    color: '#555044',
+    fontWeight: '500',
+  },
+  viewDetails: {
+    color: '#8B1E2D',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 12,
+  },
+  statusText: {
+    fontSize: 14,
+    color: '#777777',
+    paddingVertical: 20,
+    textAlign: 'center',
   },
   emptyResults: {
     backgroundColor: '#FFFFFF',
@@ -531,15 +776,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 24,
     alignItems: 'center',
+    marginBottom: 18,
   },
   emptyResultsTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: 'bold',
     color: '#222222',
     marginBottom: 8,
+    textAlign: 'center',
   },
   emptyResultsText: {
     fontSize: 14,
+    lineHeight: 21,
     color: '#666666',
     textAlign: 'center',
     marginBottom: 16,
@@ -552,6 +800,16 @@ const styles = StyleSheet.create({
   },
   resetButtonText: {
     color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  clearFiltersButton: {
+    alignSelf: 'center',
+    padding: 12,
+    marginTop: 8,
+  },
+  clearFiltersText: {
+    color: '#8B1E2D',
+    fontSize: 14,
     fontWeight: '600',
   },
 });
