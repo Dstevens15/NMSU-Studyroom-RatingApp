@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import ReviewRadarChart from '@/components/ReviewRadarChart';
 
 import bransonImage from '../../assets/images/Branson.png';
 import corbettImage from '../../assets/images/Corbett.jpeg';
@@ -21,6 +22,7 @@ import hardmanImage from '../../assets/images/Hardman.jpeg';
 import laVistaImage from '../../assets/images/LaVista.jpeg';
 import nativeAmericanImage from '../../assets/images/NA.png';
 import zuhlImage from '../../assets/images/Zuhl.png';
+
 
 const API_URL = 'https://nmsu-studyroom-ratingapp.onrender.com';
 
@@ -497,6 +499,22 @@ export default function StudyroomDetailsScreen() {
         ) / reviews.length
       : null;
 
+  const averageEnvironment =
+  reviews.length > 0
+    ? reviews.reduce(
+        (total, review) => total + Number(review.environment_rating),
+        0
+      ) / reviews.length
+    : 0;
+
+const averageComfort =
+  reviews.length > 0
+    ? reviews.reduce(
+        (total, review) => total + Number(review.comfort_rating),
+        0
+      ) / reviews.length
+    : 0;
+
   const formatDate = (date: string) => {
     const parsedDate = new Date(date);
     if (Number.isNaN(parsedDate.getTime())) return 'Recently posted';
@@ -580,11 +598,13 @@ export default function StudyroomDetailsScreen() {
             </Pressable>
           </View>
 
-          <Text style={styles.rating}>
-            {averageRating !== null
-              ? `⭐ ${averageRating.toFixed(1)} / 5`
-              : 'Not rated yet'}
-          </Text>
+          {reviews.length > 0 && (
+            <ReviewRadarChart
+              overall={averageRating ?? 0}
+              environment={averageEnvironment}
+              comfort={averageComfort}
+            />
+          )}
 
           <Text style={styles.reviewCount}>
             {reviews.length} student {reviews.length === 1 ? 'review' : 'reviews'}
