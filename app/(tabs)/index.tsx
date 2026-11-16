@@ -1,6 +1,7 @@
 
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -119,6 +120,39 @@ export default function HomeScreen() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('All Locations');
+
+  // null means the login status is still being checked.
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+
+  // Check login status whenever the homepage comes into focus.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      async function checkLoginStatus() {
+        try {
+          const token = await SecureStore.getItemAsync('authToken');
+          const savedUser = await SecureStore.getItemAsync('user');
+
+          if (active) {
+            setIsLoggedIn(Boolean(token && savedUser));
+          }
+        } catch (error) {
+          console.error('Login status check error:', error);
+
+          if (active) {
+            setIsLoggedIn(false);
+          }
+        }
+      }
+
+      checkLoginStatus();
+
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
 
   useEffect(() => {
     let active = true;
@@ -266,10 +300,24 @@ export default function HomeScreen() {
         <Text style={styles.appTitle}>NMSU Studyrooms</Text>
 
         <Pressable
-          onPress={() => router.push('/login')}
-          style={styles.signInButton}
+          onPress={() =>
+            router.push(
+              isLoggedIn ? '/(tabs)/account' : '/login'
+            )
+          }
+          disabled={isLoggedIn === null}
+          style={[
+            styles.signInButton,
+            isLoggedIn === null && styles.disabledButton,
+          ]}
         >
-          <Text style={styles.signInText}>Sign In</Text>
+          <Text style={styles.signInText}>
+            {isLoggedIn === null
+              ? '...'
+              : isLoggedIn
+                ? 'My Account'
+                : 'Sign In'}
+          </Text>
         </Pressable>
       </View>
 
@@ -341,11 +389,11 @@ export default function HomeScreen() {
         </Pressable>
 
         <Pressable
-          onPress={() => router.push('/campus_map')}
+          onPress={() => router.push('/campus-map')}
           style={styles.mapButton}
         >
           <Text style={styles.mapButtonText}>
-            🗺 Explore NMSU Campus Map
+            🗺 Explore Campus
           </Text>
         </Pressable>
 
@@ -541,6 +589,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 10,
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
   signInText: {
     color: '#8B1E2D',

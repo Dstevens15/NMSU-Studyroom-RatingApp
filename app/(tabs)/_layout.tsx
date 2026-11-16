@@ -1,5 +1,6 @@
 
 import { Tabs } from 'expo-router';
+import { Text } from 'react-native';
 
 export default function TabLayout() {
   return (
@@ -26,7 +27,20 @@ export default function TabLayout() {
           title: 'Home',
           tabBarLabel: 'Home',
           tabBarIcon: ({ color, size }) => (
-            <TextIcon name="home" color={color} size={size} />
+            <Text style={{ color, fontSize: size }}>⌂</Text>
+          ),
+        }}
+      />
+
+    
+
+      <Tabs.Screen
+        name="food"
+        options={{
+          title: 'Food & Drinks',
+          tabBarLabel: 'Food',
+          tabBarIcon: ({ color, size }) => (
+            <Text style={{ color, fontSize: size }}>🍴</Text>
           ),
         }}
       />
@@ -35,9 +49,9 @@ export default function TabLayout() {
         name="account"
         options={{
           title: 'My Account',
-          tabBarLabel: 'My Account',
+          tabBarLabel: 'Account',
           tabBarIcon: ({ color, size }) => (
-            <TextIcon name="user" color={color} size={size} />
+            <Text style={{ color, fontSize: size }}>♙</Text>
           ),
         }}
       />
@@ -45,20 +59,3 @@ export default function TabLayout() {
   );
 }
 
-import { Text } from 'react-native';
-
-function TextIcon({
-  name,
-  color,
-  size,
-}: {
-  name: string;
-  color: string;
-  size: number;
-}) {
-  return (
-    <Text style={{ color, fontSize: size }}>
-      {name === 'home' ? '⌂' : '♙'}
-    </Text>
-  );
-}

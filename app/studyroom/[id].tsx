@@ -1,3 +1,4 @@
+
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useCallback, useState } from 'react';
@@ -21,8 +22,37 @@ import hardmanImage from '../../assets/images/Hardman.jpeg';
 import laVistaImage from '../../assets/images/LaVista.jpeg';
 import nativeAmericanImage from '../../assets/images/NA.png';
 import zuhlImage from '../../assets/images/Zuhl.png';
+import LocationMiniMap from '../../components/LocationMiniMap';
 
 const API_URL = 'https://nmsu-studyroom-ratingapp.onrender.com';
+
+const STUDY_COORDINATES: Record<
+  string,
+  { latitude: number; longitude: number }
+> = {
+  zuhl: { latitude: 32.28148, longitude: -106.74964 },
+  branson: { latitude: 32.28150, longitude: -106.75210 },
+  corbett: {
+    latitude: 32.28310706280288,
+    longitude: -106.74763390421676,
+  },
+  'hardman-jacobs': {
+    latitude: 32.28248,
+    longitude: -106.75122,
+  },
+  'native-american': {
+    latitude: 32.283009803831604,
+    longitude: -106.74592109072447,
+  },
+  'la-vista': {
+    latitude: 32.28045,
+    longitude: -106.74890,
+  },
+  garcia: {
+    latitude: 32.2821861421539,
+    longitude: -106.74769079257787,
+  },
+};
 
 type Review = {
   review_id: number;
@@ -69,20 +99,23 @@ const studyrooms: Record<string, Studyroom> = {
   },
   'native-american': {
     name: 'Native American Center',
-    description: 'A campus location offering students a place to study, gather, and connect.',
+    description:
+      'A campus location offering students a place to study, gather, and connect.',
     rooms: 'Study and gathering spaces available to students.',
     image: nativeAmericanImage,
     printing: true,
   },
   'la-vista': {
     name: 'La Vista Learning Center',
-    description: 'A learning center offering spaces for individual and group study.',
+    description:
+      'A learning center offering spaces for individual and group study.',
     rooms: 'Study areas and learning spaces for students.',
     image: laVistaImage,
   },
   'hardman-jacobs': {
     name: 'Hardman & Jacobs Undergraduate Learning Center',
-    description: 'A campus learning center with computer labs and study areas.',
+    description:
+      'A campus learning center with computer labs and study areas.',
     rooms: 'Computer labs and student study areas.',
     image: hardmanImage,
   },
@@ -107,12 +140,17 @@ export default function StudyroomDetailsScreen() {
 
   const [communityLoading, setCommunityLoading] = useState(false);
 
-  const isCommunityLocation = String(locationId || '').startsWith('community-');
+  const isCommunityLocation = String(locationId || '').startsWith(
+    'community-'
+  );
 
   const room = studyrooms[String(locationId).toLowerCase()] ?? {
     name: communityLocation?.name ?? 'Studyroom',
-    description: communityLocation?.description ?? 'Study location at NMSU.',
-    rooms: communityLocation?.rooms ?? 'Studyroom information will be added later.',
+    description:
+      communityLocation?.description ?? 'Study location at NMSU.',
+    rooms:
+      communityLocation?.rooms ??
+      'Studyroom information will be added later.',
     image: zuhlImage,
     amenities: communityLocation?.amenities ?? [],
   };
@@ -197,7 +235,9 @@ export default function StudyroomDetailsScreen() {
               );
 
               const communityResponse = await fetch(
-                `${API_URL}/api/recommendations/community/${encodeURIComponent(recommendationId)}`
+                `${API_URL}/api/recommendations/community/${encodeURIComponent(
+                  recommendationId
+                )}`
               );
 
               const communityData = await communityResponse.json();
@@ -228,6 +268,7 @@ export default function StudyroomDetailsScreen() {
                 'Community location loading error:',
                 communityError
               );
+
               if (active) {
                 setError('Unable to load this community location.');
               }
@@ -258,7 +299,8 @@ export default function StudyroomDetailsScreen() {
             if (active) {
               setIsFavorite(
                 favorites.some(
-                  (favorite: any) => favorite.studyroom_id === locationId
+                  (favorite: any) =>
+                    favorite.studyroom_id === locationId
                 )
               );
             }
@@ -511,6 +553,7 @@ export default function StudyroomDetailsScreen() {
     return (
       <View style={styles.ratingEditor}>
         <Text style={styles.editorLabel}>{label}</Text>
+
         <View style={styles.ratingOptions}>
           {[1, 2, 3, 4, 5].map((number) => (
             <Pressable
@@ -536,7 +579,10 @@ export default function StudyroomDetailsScreen() {
     );
   }
 
-    return (
+  const studyCoordinates =
+    STUDY_COORDINATES[String(locationId || '').toLowerCase()];
+
+  return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
         <Text style={styles.appTitle}>NMSU Studyroom Ratings</Text>
@@ -575,7 +621,11 @@ export default function StudyroomDetailsScreen() {
               style={styles.favoriteButton}
             >
               <Text style={styles.favoriteText}>
-                {favoriteLoading ? '...' : isFavorite ? '♥ Saved' : '♡ Save'}
+                {favoriteLoading
+                  ? '...'
+                  : isFavorite
+                    ? '♥ Saved'
+                    : '♡ Save'}
               </Text>
             </Pressable>
           </View>
@@ -587,7 +637,8 @@ export default function StudyroomDetailsScreen() {
           </Text>
 
           <Text style={styles.reviewCount}>
-            {reviews.length} student {reviews.length === 1 ? 'review' : 'reviews'}
+            {reviews.length} student{' '}
+            {reviews.length === 1 ? 'review' : 'reviews'}
           </Text>
 
           {room.printing && (
@@ -604,7 +655,21 @@ export default function StudyroomDetailsScreen() {
           <Text style={styles.sectionTitle}>
             {isCommunityLocation ? 'Location Details' : 'Study areas'}
           </Text>
+
           <Text style={styles.description}>{room.rooms}</Text>
+
+          {!isCommunityLocation && studyCoordinates && (
+            <>
+              <Text style={styles.sectionTitle}>Find this location</Text>
+
+              <LocationMiniMap
+                latitude={studyCoordinates.latitude}
+                longitude={studyCoordinates.longitude}
+                label={room.name}
+                markerType="study"
+              />
+            </>
+          )}
 
           {isCommunityLocation && (
             <>
@@ -809,7 +874,6 @@ export default function StudyroomDetailsScreen() {
     </SafeAreaView>
   );
 }
-
 
 const styles = StyleSheet.create({
   safeArea: {

@@ -100,7 +100,7 @@ export default function LoginScreen() {
           <TextInput
             style={styles.input}
             placeholder="Email"
-            placeholderTextColor="#555555"
+            placeholderTextColor="#A18E88"
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
@@ -114,7 +114,7 @@ export default function LoginScreen() {
           <TextInput
             style={styles.input}
             placeholder="Password"
-            placeholderTextColor="#555555"
+            placeholderTextColor="#A18E88"
             secureTextEntry
             autoCapitalize="none"
             accessibilityLabel="Password"
@@ -170,7 +170,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FAF7F3',
   },
 
   keyboardView: {
@@ -189,35 +189,37 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    borderWidth: 1,
-    borderColor: '#777777',
+    borderWidth: 1.5,
+    borderColor: '#D9B8B5',
+    backgroundColor: '#F3E7E3',
     alignSelf: 'center',
     marginBottom: 12,
   },
 
   title: {
     fontSize: 22,
-    fontWeight: '300',
-    color: '#222222',
+    fontWeight: '500',
+    color: '#8B1E2D',
     textAlign: 'center',
     marginBottom: 10,
+    letterSpacing: 1.2,
   },
 
   input: {
     height: 34,
     borderWidth: 1,
-    borderColor: '#999999',
+    borderColor: '#E4D8D1',
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 12,
     fontSize: 12,
-    color: '#111111',
+    color: '#463936',
     marginBottom: 12,
-    borderRadius: 1,
+    borderRadius: 5,
   },
 
   loginButton: {
     height: 36,
-    backgroundColor: '#000000',
+    backgroundColor: '#8B1E2D',
     borderRadius: 5,
     alignItems: 'center',
     justifyContent: 'center',
@@ -225,7 +227,7 @@ const styles = StyleSheet.create({
   },
 
   buttonPressed: {
-    opacity: 0.75,
+    opacity: 0.8,
   },
 
   disabledButton: {
@@ -235,7 +237,7 @@ const styles = StyleSheet.create({
   loginButtonText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
   },
 
   registerRow: {
@@ -246,13 +248,14 @@ const styles = StyleSheet.create({
   },
 
   registerText: {
-    color: '#111111',
+    color: '#65534E',
     fontSize: 18,
   },
 
   registerLink: {
-    color: '#1673E6',
+    color: '#8B1E2D',
     fontSize: 18,
+    fontWeight: '600',
   },
 
   backButton: {
